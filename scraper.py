@@ -4,6 +4,7 @@ Searches charities on acnc.gov.au via its internal JSON APIs, keeps only
 registered ones, fetches each detail record (with a polite delay) and
 exports ABN, Address for Service Email and Charity size to Excel.
 Progress is saved after every record, so an interrupted run can resume.
+The delay between requests adapts to the server (slows down on 429/403).
 """
 
 import json
@@ -30,6 +31,47 @@ HEADERS = {
     "Accept": "application/json",
 }
 
+MAX_DELAY = 30
+MAX_RETRIES = 3
+
+
+class AdaptiveDelay:
+    """Pause between requests: grows on 429/403, shrinks back when OK."""
+
+    def __init__(self, base):
+        self.base = base
+        self.current = base
+
+    def wait(self):
+        time.sleep(self.current)
+
+    def slow_down(self):
+        self.current = min(self.current * 2, MAX_DELAY)
+
+    def speed_up(self):
+        self.current = max(self.current * 0.8, self.base)
+
+
+throttle = AdaptiveDelay(DELAY_SECONDS)
+
+
+def http_get(url, **kwargs):
+    """GET with retries; backs off when the server answers 429 or 403."""
+    for attempt in range(1, MAX_RETRIES + 1):
+        resp = requests.get(url, headers=HEADERS, timeout=30, **kwargs)
+        if resp.status_code in (429, 403):
+            throttle.slow_down()
+            print(
+                f"  Blocked ({resp.status_code}). Pausing {throttle.current:.0f}s "
+                f"(attempt {attempt}/{MAX_RETRIES})"
+            )
+            throttle.wait()
+            continue
+        resp.raise_for_status()
+        throttle.speed_up()
+        return resp
+    raise requests.RequestException(f"Still blocked after {MAX_RETRIES} attempts")
+
 
 def load_progress(path):
     """Return {uuid: row or None} from a previous run (empty if none)."""
@@ -53,10 +95,7 @@ def search_charities(term, sample_size):
     page = 0
     while len(found) < sample_size:
         params = {"search": term, "page": page, "items_per_page": 50}
-        resp = requests.get(
-            f"{BASE_URL}/search/charity", params=params, headers=HEADERS, timeout=30
-        )
-        resp.raise_for_status()
+        resp = http_get(f"{BASE_URL}/search/charity", params=params)
         payload = resp.json()
 
         for item in payload.get("results", []):
@@ -70,16 +109,13 @@ def search_charities(term, sample_size):
         page += 1
         if page >= total_pages:
             break
-        time.sleep(DELAY_SECONDS)
+        throttle.wait()
     return found
 
 
 def fetch_detail(uuid):
     """Return the detail record (dict) for one charity."""
-    resp = requests.get(
-        f"{BASE_URL}/entity/{uuid}", headers=HEADERS, timeout=30
-    )
-    resp.raise_for_status()
+    resp = http_get(f"{BASE_URL}/entity/{uuid}")
     return resp.json().get("data", {})
 
 
@@ -138,7 +174,7 @@ def main():
         except requests.RequestException as exc:
             # Errors are not saved, so they are retried on the next run.
             print(f"[{i}/{len(charities)}] ERROR - {charity['name']}: {exc}")
-        time.sleep(DELAY_SECONDS)
+        throttle.wait()
 
     rows = [row for row in progress.values() if row]
     export_to_excel(rows, OUTPUT_FILE)
