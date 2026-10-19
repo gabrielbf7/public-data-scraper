@@ -5,6 +5,7 @@ registered ones, fetches each detail record (with a polite delay) and
 exports ABN, Address for Service Email and Charity size to Excel.
 Progress is saved after every record, so an interrupted run can resume.
 The delay between requests adapts to the server (slows down on 429/403).
+Records are processed in batches; the Excel file is saved after each batch.
 """
 
 import json
@@ -18,7 +19,8 @@ from openpyxl.utils import get_column_letter
 
 BASE_URL = "https://www.acnc.gov.au/api/dynamics"
 SEARCH_TERM = "garden"
-SAMPLE_SIZE = 30
+SAMPLE_SIZE = 100
+BATCH_SIZE = 10
 DELAY_SECONDS = 1
 OUTPUT_FILE = "acnc_charities_sample.xlsx"
 PROGRESS_FILE = "progress.json"
@@ -144,41 +146,59 @@ def export_to_excel(rows, path):
     wb.save(path)
 
 
+def process_charity(charity, label, progress):
+    """Fetch one charity, update progress and save it. Errors are not saved."""
+    uuid = charity["uuid"]
+    if uuid in progress:
+        print(f"{label} DONE (previous run) - {charity['name']}")
+        return
+    try:
+        detail = fetch_detail(uuid)
+        if not detail.get("Abn"):
+            progress[uuid] = None  # remember it was skipped
+            print(f"{label} SKIP (no ABN) - {charity['name']}")
+        else:
+            progress[uuid] = {
+                "name": detail.get("Name") or charity["name"],
+                "abn": detail.get("Abn"),
+                "email": detail.get("AFSEmail"),
+                "size": detail.get("CharitySize") or "Not reported",
+            }
+            print(f"{label} OK - {charity['name']}")
+        save_progress(progress, PROGRESS_FILE)
+    except requests.RequestException as exc:
+        print(f"{label} ERROR - {charity['name']}: {exc}")
+    throttle.wait()
+
+
+def save_excel(progress):
+    """Export all collected rows; warn instead of crashing if the file is open."""
+    rows = [row for row in progress.values() if row]
+    try:
+        export_to_excel(rows, OUTPUT_FILE)
+        print(f"  Saved {len(rows)} rows to {OUTPUT_FILE}")
+    except PermissionError:
+        print(f"  Could not save {OUTPUT_FILE}. Close it in Excel; will retry next batch.")
+
+
 def main():
     print(f"Searching for '{SEARCH_TERM}'...")
     charities = search_charities(SEARCH_TERM, SAMPLE_SIZE)
-    print(f"Found {len(charities)} registered charities.")
+    total = len(charities)
+    print(f"Found {total} registered charities.")
 
     progress = load_progress(PROGRESS_FILE)
     print(f"Resuming: {len(progress)} records already processed.")
 
-    for i, charity in enumerate(charities, start=1):
-        uuid = charity["uuid"]
-        if uuid in progress:
-            print(f"[{i}/{len(charities)}] DONE (previous run) - {charity['name']}")
-            continue
-        try:
-            detail = fetch_detail(uuid)
-            if not detail.get("Abn"):
-                progress[uuid] = None  # remember it was skipped
-                print(f"[{i}/{len(charities)}] SKIP (no ABN) - {charity['name']}")
-            else:
-                progress[uuid] = {
-                    "name": detail.get("Name") or charity["name"],
-                    "abn": detail.get("Abn"),
-                    "email": detail.get("AFSEmail"),
-                    "size": detail.get("CharitySize") or "Not reported",
-                }
-                print(f"[{i}/{len(charities)}] OK - {charity['name']}")
-            save_progress(progress, PROGRESS_FILE)
-        except requests.RequestException as exc:
-            # Errors are not saved, so they are retried on the next run.
-            print(f"[{i}/{len(charities)}] ERROR - {charity['name']}: {exc}")
-        throttle.wait()
+    total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
+    for start in range(0, total, BATCH_SIZE):
+        print(f"--- Batch {start // BATCH_SIZE + 1}/{total_batches} ---")
+        batch = charities[start:start + BATCH_SIZE]
+        for i, charity in enumerate(batch, start=start + 1):
+            process_charity(charity, f"[{i}/{total}]", progress)
+        save_excel(progress)
 
-    rows = [row for row in progress.values() if row]
-    export_to_excel(rows, OUTPUT_FILE)
-    print(f"Done. Saved {len(rows)} rows to {OUTPUT_FILE}")
+    print("Done.")
 
 
 if __name__ == "__main__":
