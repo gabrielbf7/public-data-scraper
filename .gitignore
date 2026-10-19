@@ -2,3 +2,5 @@
 ~$*
 test_fetch.py
 __pycache__/
+
+progress.json*
