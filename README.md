@@ -4,17 +4,22 @@ Python scraper that collects public data from Australian charities listed on the
 
 **Collected fields:** Name, ABN, Address for Service Email, Charity Size.
 
-> This repository contains a **sample run (~30 charities)** to demonstrate the approach. The same code scales to the full register (~55,000 charities), see "Scaling" below.
+> This repository contains a **sample run (~100 charities)** to demonstrate the approach. The same code scales to the full register (~55,000 charities), see "Scaling" below.
+
+## Features
+
+- **Resume after failure:** progress is saved after every record in `progress.json`, so an interrupted run continues where it stopped.
+- **Adaptive delay:** the pause between requests doubles (up to 30s) when the server answers 429/403, retries up to 3 times, and returns to normal when requests succeed.
+- **Batch processing:** records are processed in batches (`BATCH_SIZE`) and the Excel file is saved after each batch, so partial results are always available.
+- **Clean output:** styled header, auto-sized columns, frozen header row.
 
 ## How it works
 
 1. Queries the ACNC internal JSON search API (paginated) and keeps only charities with status "Registered".
 2. Fetches each charity's detail record by UUID to get the Address for Service Email.
 3. Skips records without an ABN (e.g. internal group records).
-4. Exports the results to `acnc_charities_sample.xlsx` with a styled header, auto-sized columns and a frozen header row.
+4. Exports the results to `acnc_charities_sample.xlsx`.
 5. Charity size is shown as "Not reported" when the ACNC has not classified the charity.
-
-Requests are sent with a browser User-Agent and a configurable pause (`DELAY_SECONDS`) between calls, to keep the load on the server low.
 
 ## Tech Stack
 
@@ -32,15 +37,13 @@ Requests are sent with a browser User-Agent and a configurable pause (`DELAY_SEC
 
     python scraper.py
 
-Change `SEARCH_TERM`, `SAMPLE_SIZE` and `DELAY_SECONDS` at the top of `scraper.py` to adjust the run.
+Change `SEARCH_TERM`, `SAMPLE_SIZE`, `BATCH_SIZE` and `DELAY_SECONDS` at the top of `scraper.py` to adjust the run. To start a fresh collection, delete `progress.json`.
 
 ## Scaling to the full dataset
 
-For the full register (~55,000 charities) the plan is:
+Already implemented: resume, adaptive delay and batch saving. Planned for the full register (~55,000 charities):
 
 - Paginate the search with 100 items per page and no search term.
-- Save progress in batches and resume from where it stopped after an interruption.
-- Adaptive delay: slow down automatically if the server returns 429/403 errors.
 - Log skipped and failed records to a separate file.
 
 ## Notes
