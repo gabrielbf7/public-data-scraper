@@ -4,3 +4,8 @@ test_fetch.py
 __pycache__/
 
 progress.json*
+
+charity_list.jsonl
+emails.jsonl
+datadotgov_main.xlsx
+acnc_registered_charities.xlsx
