@@ -42,7 +42,12 @@ The number after `collect_emails.py` limits how many charities are processed in 
 
 ## Sample output
 
-`acnc_sample_masked.xlsx` has 50 rows from a real run. Email local parts are masked (`***@domain`), because some are personal addresses. The complete files are not published.
+Two sample files from real runs are included:
+
+- `acnc_sample_masked.xlsx`: 50 rows from the full-register workflow (`collect_list.py` + `collect_emails.py`).
+- `acnc_charities_sample.xlsx`: 99 rows from the single-file demo (`scraper.py`, search term "garden").
+
+In both, email local parts are masked (`***@domain`), because some are personal addresses. The complete files are not published.
 
 ## Performance
 
