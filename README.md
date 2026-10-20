@@ -4,7 +4,7 @@ Python scraper that collects public data from Australian charities listed on the
 
 **Collected fields:** Name, ABN, Address for Service Email, Charity Size.
 
-> This repository contains **sample outputs** (not the full dataset) to demonstrate the approach. The code handles the full register (66,907 registered charities), see "Performance" below.
+> This repository contains **sample outputs** (not the full dataset) to demonstrate the approach. The listing step ran on the full register (95,638 charities); the email step was validated on a 1,000-charity run, see "Performance" below.
 
 ## Features
 
@@ -53,11 +53,15 @@ Measured on a 1,000-charity run:
 - 982 of 1,000 records (98.2%) had an Address for Service Email.
 - Parallel requests could shorten the full run, but increase the risk of being blocked, so they are not enabled.
 
-## Notes
+## Limitations and compliance
 
+- **Unofficial endpoints:** the scraper uses the website's internal JSON APIs (`/api/dynamics/search/charity` and `/api/dynamics/entity/{uuid}`), which are undocumented and may change without notice.
+- **robots.txt:** it disallows `/search/` but does not restrict `/api/`. A polite delay is kept between requests.
+- **Requirements:** a browser-like User-Agent header is needed; a VPN caused timeouts in testing.
+- **Scale:** only 1,000 detail records were collected in a real run. The full-run time is an extrapolation, and blocking behavior at larger volumes is untested.
+- **Personal data:** some emails are personal addresses, so full outputs are not published (only the masked sample). Check applicable rules (e.g., Australia's Spam Act) before using emails for outreach.
 - Group records (names ending in "_ACNC Group") have no ABN of their own, so ABN and email may be blank for them.
 - Only publicly available data is collected, via the same endpoints the website itself uses.
-- Please respect the website's terms and robots.txt, and keep a polite delay between requests.
 
 ## Author
 
