@@ -4,22 +4,22 @@ Python scraper that collects public data from Australian charities listed on the
 
 **Collected fields:** Name, ABN, Address for Service Email, Charity Size.
 
-> This repository contains a **sample run (~100 charities)** to demonstrate the approach. The same code scales to the full register (~55,000 charities), see "Scaling" below.
+> This repository contains **sample outputs** (not the full dataset) to demonstrate the approach. The code handles the full register (66,907 registered charities), see "Performance" below.
 
 ## Features
 
-- **Resume after failure:** progress is saved after every record in `progress.json`, so an interrupted run continues where it stopped.
+- **Full register listing:** one paginated search lists all 95,638 charities (957 pages of 100) with ABN, status and size.
+- **Resume after failure:** every step saves its progress (page by page, record by record), so an interrupted run continues where it stopped.
 - **Adaptive delay:** the pause between requests doubles (up to 30s) when the server answers 429/403, retries up to 3 times, and returns to normal when requests succeed.
-- **Batch processing:** records are processed in batches (`BATCH_SIZE`) and the Excel file is saved after each batch, so partial results are always available.
+- **Cross-checked data:** the ABNs were compared against the official data.gov.au dataset (0 missing).
 - **Clean output:** styled header, auto-sized columns, frozen header row.
 
 ## How it works
 
-1. Queries the ACNC internal JSON search API (paginated) and keeps only charities with status "Registered".
-2. Fetches each charity's detail record by UUID to get the Address for Service Email.
-3. Skips records without an ABN (e.g. internal group records).
-4. Exports the results to `acnc_charities_sample.xlsx`.
-5. Charity size is shown as "Not reported" when the ACNC has not classified the charity.
+1. `collect_list.py` queries the ACNC internal JSON search API with a blank search term and writes `charity_list.jsonl` (UUID, name, ABN, status, size).
+2. `collect_emails.py` reads that list, keeps only charities with status "Registered", and fetches each detail record by UUID to get the Address for Service Email (plus the general contact email as an extra). Results are appended to `emails.jsonl`.
+3. The Excel file `acnc_registered_charities.xlsx` is rebuilt every 1,000 records and at the end of the run.
+4. `scraper.py` is the original single-file version (search term + sample size), kept as a simple demo.
 
 ## Tech Stack
 
@@ -35,19 +35,27 @@ Python scraper that collects public data from Australian charities listed on the
 
 ## Usage
 
-    python scraper.py
+    python collect_list.py
+    python collect_emails.py 1000
 
-Change `SEARCH_TERM`, `SAMPLE_SIZE`, `BATCH_SIZE` and `DELAY_SECONDS` at the top of `scraper.py` to adjust the run. To start a fresh collection, delete `progress.json`.
+The number after `collect_emails.py` limits how many charities are processed in the run. Omit it to process all of them. To resume after an interruption, run the same command again. To start over, delete `emails.jsonl`.
 
-## Scaling to the full dataset
+## Sample output
 
-Already implemented: resume, adaptive delay and batch saving. Planned for the full register (~55,000 charities):
+`acnc_sample_masked.xlsx` has 50 rows from a real run. Email local parts are masked (`***@domain`), because some are personal addresses. The complete files are not published.
 
-- Paginate the search with 100 items per page and no search term.
-- Log skipped and failed records to a separate file.
+## Performance
+
+Measured on a 1,000-charity run:
+
+- About 2.5 s per record (request plus a 1 s polite delay): ~42 minutes for 1,000 records.
+- Estimated full run for 66,907 registered charities: ~46 hours sequential.
+- 982 of 1,000 records (98.2%) had an Address for Service Email.
+- Parallel requests could shorten the full run, but increase the risk of being blocked, so they are not enabled.
 
 ## Notes
 
+- Group records (names ending in "_ACNC Group") have no ABN of their own, so ABN and email may be blank for them.
 - Only publicly available data is collected, via the same endpoints the website itself uses.
 - Please respect the website's terms and robots.txt, and keep a polite delay between requests.
 
